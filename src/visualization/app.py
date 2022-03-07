@@ -3,7 +3,7 @@ import streamlit as st
 from psycopg2 import Error
 # BLAH BLAH
 from multipage import MultiPage
-from pages import add_golf_round, add_golf_course, authentication
+from pages import add_golf_round, add_golf_course, authentication, dashboard
 
 # Variables
 USER = "postgres"
@@ -40,9 +40,9 @@ con, cursor = connect_to_postgres_database(USER, PASSWORD, DATABASE, host="127.0
 # Create an instance of the app
 app = MultiPage()
 
-
 # Add all your applications (pages) here
 app.add_page("Login / Signup", authentication.app)
+app.add_page("View Data", dashboard.app)
 app.add_page("Upload Golf Round", add_golf_round.app)
 app.add_page("Add a New Course", add_golf_course.app)
 

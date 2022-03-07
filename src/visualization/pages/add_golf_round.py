@@ -33,9 +33,15 @@ TEMPERATURE_TEXT = "It was {} degrees during your round. "
 DISTANCE_TABLE = "course_distance"
 PAR_TABLE = "course_par"
 SI_TABLE = "course_stroke_index"
+FRONT9 = "Front 9"
+BACK9 = "Back 9"
+ALL18 = "18"
+ROUND_SHOTS_TABLE = "round_shots"
+ROUND_PUTTS_TABLE = "round_putts"
+ROUND_FIR_TABLE = "round_fir"
+ROUND_GIR_TABLE = "round_gir"
 
 
-# Functions
 # Initialise connection and generate cursor
 def connect_to_postgres_database(user, password, database, host="127.0.0.1", port="5432"):
     """
@@ -93,27 +99,6 @@ def cursor_execute_tuple(command, data_tuple):
     return None
 
 
-# Insert course data into course table
-def insert_course_in_course_table(name, holes_18, city, slope, rating, par, country):
-    """
-    Function inserts course information into the course table
-    :param name: the name of the course (TEXT)
-    :param holes_18: the number of holes the course has (INT)
-    :param city: the city/location of the course (TEXT)
-    :param slope: the slope of the course (FLOAT)
-    :param rating: the rating of the course (FLOAT)
-    :param par: the par of the course (INT)
-    :param country: the country of the course (TEXT)
-    :return:
-    """
-    insert_command = """INSERT INTO course
-                  (name, holes_18, city, slope, rating,  par, country)
-                  VALUES (%s, %s, %s, %s, %s, %s, %s);"""
-    data_tuple = (name, holes_18, city, slope, rating, par, country)
-    cursor_execute_tuple(insert_command, data_tuple)
-    return None
-
-
 def get_id_from_course_name(course_name):
     """
     Function returns the id of the course in the course table based on the name
@@ -127,96 +112,6 @@ def get_id_from_course_name(course_name):
     id = returned_value[0][0]
     return id
 
-
-# Score card generate and download
-def make_hole_number_range_scorecard(course_holes18):
-    """
-    Function creates a list of numbers. Either 9 holes or 18
-    :param course_holes18: number of holes the course has
-    :return: list of holes where number of holes is either 9 or 18
-    """
-    if course_holes18 == 9:
-        list_of_holes = list(range(1, 10))
-    elif course_holes18 == 18:
-        list_of_holes = list(range(1, 19))
-    else:
-        pass
-    return list_of_holes
-
-
-def make_course_score_card_csv(course_name, course_holes18):
-    """
-    Function will generate a .csv containing the course name and number of holes
-    :param course_name: name of course quiered
-    :param course_holes18: number of holes the course has
-    :return: to_csv object that can be downloaded
-    """
-    course_score_card_template_df = pd.DataFrame()
-    list_of_holes = make_hole_number_range_scorecard(course_holes18)
-    course_score_card_template_df["Hole"] = list_of_holes
-    course_score_card_template_df["Distance"] = ""
-    course_score_card_template_df["Par"] = ""
-    course_score_card_template_df["Stroke Index"] = ""
-    course_score_card_template_df["Name"] = course_name
-    course_score_card_template_df_csv = course_score_card_template_df.to_csv(index=False)
-    return course_score_card_template_df_csv
-
-
-# Insert course features par/distance/si
-def make_data_tuple_9holes(table, course_feature, course_id):
-    """
-    Function creates the SQL command needed to insert features into a table - 9 holes
-    :param table: name of table in database
-    :param course_feature: list of features
-    :param course_id: id of course in course table
-    :return: insert SQL command, features as tuple
-    """
-    insert_command = """INSERT INTO {}
-                  (course_id, hole1, hole2, hole3, hole4, hole5, hole6, hole7, hole8, hole9)
-                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);""".format(table)
-    course_id_list = [course_id]
-    course_id_tuple = tuple(course_id_list)
-    feature_tuple = tuple(course_feature)
-    data_tuple = tuple(course_id_tuple) + tuple(feature_tuple)
-    return insert_command, data_tuple
-
-
-def make_data_tuple_18holes(table, course_feature, course_id):
-    """
-    Function creates the SQL command needed to insert features into a table - 18 holes
-    :param table: name of table in database
-    :param course_feature: list of features
-    :param course_id: id of course in course table
-    :return: insert SQL command, features as tuple
-    """
-    insert_command = """INSERT INTO {}
-                      (course_id, hole1, hole2, hole3, hole4, hole5, hole6, hole7, hole8, hole9, hole10, hole11, hole12, hole13, hole14, hole15, hole16, hole17, hole18)
-                      VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);""".format(
-        table)
-    course_id_list = [course_id]
-    course_id_tuple = tuple(course_id_list)
-    feature_tuple = tuple(course_feature)
-    data_tuple = tuple(course_id_tuple) + tuple(feature_tuple)
-    return insert_command, data_tuple
-
-
-def insert_score_card_feature_to_table(table, course_feature, course_id):
-    """
-    Function pipelines the process to insert 9/18 hole feature information (par, si, distance) into a database table
-    :param table: name of table in database
-    :param course_feature: list of features
-    :param course_id: id of course in course table
-    :return:
-    """
-    if len(course_feature) == 9:
-        insert_command, data_tuple = make_data_tuple_9holes(table, course_feature, course_id)
-    elif len(course_feature) == 18:
-        insert_command, data_tuple = make_data_tuple_18holes(table, course_feature, course_id)
-    cursor_execute_tuple(insert_command, data_tuple)
-    return None
-
-
-################################ 04_adding_golf_round_ipynb #######################
 
 def make_alphabetical_course_name_list():
     """
@@ -261,6 +156,7 @@ def make_lat_lon_for_city(city, country):
     lon = loc.longitude
     return lat, lon
 
+
 # Get station id and weather conditions
 def make_nearest_station_id_from_lon_lat(lat, lon):
     """
@@ -275,6 +171,7 @@ def make_nearest_station_id_from_lon_lat(lat, lon):
     all_station_ids = stations.index
     return all_station_ids
 
+
 def make_historical_hourly_weather_df(station_id, start, end):
     """
     Function returns a Pandas DataFrame containing the hourly weather conditions for a specified station during a specified time
@@ -286,6 +183,7 @@ def make_historical_hourly_weather_df(station_id, start, end):
     data = Hourly(station_id, start, end)
     data = data.fetch()
     return data
+
 
 def make_pipeline_city_historical_hourly_weather_df(city, country, start, end):
     """
@@ -304,6 +202,7 @@ def make_pipeline_city_historical_hourly_weather_df(city, country, start, end):
             break
     return data
 
+
 def make_round_weather_condition_lists(weather_data):
     """
     Function returns lists of key features from the weather data
@@ -317,6 +216,7 @@ def make_round_weather_condition_lists(weather_data):
     round_weather_code = list(weather_data["coco"])
     return round_air_temp, round_rhumidity, round_precipitation, round_wind_speed, round_weather_code
 
+
 def make_list_without_nan_values(list_of_values):
     """
     Function loops through a list and removes all np.nan values from it
@@ -325,6 +225,7 @@ def make_list_without_nan_values(list_of_values):
     """
     clean_list = [i for i in list_of_values if np.isnan(i) == False]
     return clean_list
+
 
 def make_mean_weather_feature(weather_feature_list):
     """
@@ -338,6 +239,7 @@ def make_mean_weather_feature(weather_feature_list):
         value = round(mean(weather_feature_list))
     return value
 
+
 def make_sum_weather_feature(weather_feature_list):
     """
     Function returns a sum or np.nan value for a weather feature list depending on what it originally contains
@@ -349,6 +251,7 @@ def make_sum_weather_feature(weather_feature_list):
     else:
         value = round(sum(weather_feature_list))
     return value
+
 
 def make_counted_weather_feature(weather_feature_list):
     """
@@ -363,6 +266,7 @@ def make_counted_weather_feature(weather_feature_list):
         value = max(weather_condition_counter, key=weather_condition_counter.get)
     return value
 
+
 def make_condition_from_code(weather_code):
     """
     Function returns the condition (text) from a weather code by checking if the code exists in a dictionary
@@ -374,6 +278,7 @@ def make_condition_from_code(weather_code):
     except KeyError:
         weather_condition = np.nan
     return weather_condition
+
 
 def make_weather_feature_mean_and_condition_value(round_air_temp, round_rhumidity, round_precipitation, round_wind_speed, round_weather_code):
     """
@@ -398,6 +303,7 @@ def make_weather_feature_mean_and_condition_value(round_air_temp, round_rhumidit
     weather_condition = make_condition_from_code(weather_code)
     return mean_air_temp, mean_rhumidity, sum_precipitation, mean_wind_speed, weather_condition
 
+
 def make_round_weather_condition_text(mean_air_temp, mean_rhumidity, sum_precipitation, mean_wind_speed, weather_condition):
     """
     Function creates the text pattern used to display the golf rounds weather conditions
@@ -421,6 +327,7 @@ def make_round_weather_condition_text(mean_air_temp, mean_rhumidity, sum_precipi
             variables_to_format.append(value)
     weather_text = text.format(*variables_to_format)
     return weather_text
+
 
 def make_pipeline_weather_data_to_text(weather_data):
     """
@@ -453,6 +360,7 @@ def make_course_feature_using_course_id(course_id, table, holes="18"):
         feature_list = feature_list[1:]
     return feature_list
 
+
 def make_hole_number_list(holes):
     """
     Function creates a list of numbers. Either 1-9, 10-18 holes or 1-18
@@ -469,6 +377,7 @@ def make_hole_number_list(holes):
         pass
     return list_of_holes
 
+
 def make_all_course_feature_lists(course_id, holes="18"):
     """
     Function pipelines all three calls to the three course feature tables
@@ -480,6 +389,7 @@ def make_all_course_feature_lists(course_id, holes="18"):
     course_par_list = make_course_feature_using_course_id(course_id, PAR_TABLE, holes)
     course_si_list = make_course_feature_using_course_id(course_id, SI_TABLE, holes)
     return list_of_holes, course_distance_list, course_par_list, course_si_list
+
 
 def make_round_score_card_csv(list_of_holes, course_distance_list, course_si_list, course_par_list):
     """
@@ -501,6 +411,7 @@ def make_round_score_card_csv(list_of_holes, course_distance_list, course_si_lis
     round_score_card_template_df_csv = round_score_card_template_df.to_csv(index=False)
     return round_score_card_template_df_csv
 
+
 def make_pipeline_round_score_card_csv(course_name, holes="18"):
     """
     Function pipelines the process required to generate the round score card which includes course features such distance/si/par along with blank entries for strokes/putts/fir/gir
@@ -512,7 +423,18 @@ def make_pipeline_round_score_card_csv(course_name, holes="18"):
     round_score_card_template_df_csv = make_round_score_card_csv(list_of_holes, course_distance_list, course_si_list, course_par_list)
     return round_score_card_template_df_csv
 
-# Insert course data into course table
+
+def make_date_time():
+    """
+    Function makes the current date and time
+    :return: current date and time
+    """
+    date_created = datetime.today().date()
+    time_created = datetime.now().time().strftime("%H:%M:%S")
+    return date_created, time_created
+
+
+# Insert round data into round table
 def insert_round_in_round_table(course_id, user_id, date_played, tee_time, temperature, humidity, wind_speed, precipitation, weather_condition, holes_played):
     """
     Function inserts table information into the table table
@@ -526,18 +448,136 @@ def insert_round_in_round_table(course_id, user_id, date_played, tee_time, tempe
     :param precipitation: total round rainfall
     :param weather_condition: round weather condition
     :param holes_played: holes played that round
-    :return: None
+    :return: date and time round was created
     """
     insert_command = """INSERT INTO round
-                  (course_id, user_id, date_played, tee_time, temperature, humidity, wind_speed, precipitation, weather_condition, holes_played, date_created)
-                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);"""
-    date_created = datetime.today().date()
-    data_tuple = (course_id, user_id, date_played, tee_time, temperature, humidity, wind_speed, precipitation, weather_condition, holes_played, date_created)
+                  (course_id, user_id, date_played, tee_time, temperature, humidity, wind_speed, precipitation, weather_condition, holes_played, date_created, time_created)
+                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);"""
+    date_created, time_created = make_date_time()
+    data_tuple = (course_id, user_id, date_played, tee_time, temperature, humidity, wind_speed, precipitation, weather_condition, holes_played, date_created, time_created)
     cursor_execute_tuple(insert_command, data_tuple)
+    return date_created, time_created
+
+
+def get_round_id_from_round_features(course_id, user_id, date_played, tee_time, date_created, time_created):
+    """
+    Function returns the round id for a round based on key features of that round
+    :param course_id: id of course
+    :param user_id: id of user
+    :param date_played: date round was played
+    :param tee_time: time tee time was
+    :param date_created: date round was created
+    :param time_created: time round was created
+    :return: round of id
+    """
+    insert_command = """SELECT round_id FROM round
+                    WHERE course_id = %s AND user_id = %s AND date_played = %s AND tee_time = %s AND date_created = %s AND time_created = %s;"""
+    cursor.execute(insert_command, [course_id, user_id, date_played, tee_time, date_created, time_created])
+    returned_value = cursor.fetchall()
+    round_id = returned_value[0][0]
+    return round_id
+
+
+# Insert round features shots/putts/fir/gir
+def make_data_tuple_front9(table, round_feature, round_id):
+    """
+    Function creates the SQL command needed to insert features into a table for the FRONT9
+    :param table: name of table in database
+    :param round_feature: list of features
+    :param round_id: id of round in round table
+    :return: insert SQL command, features as tuple
+    """
+    insert_command = """INSERT INTO {}
+                  (round_id, hole1, hole2, hole3, hole4, hole5, hole6, hole7, hole8, hole9)
+                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);""".format(table)
+    round_id_list = [round_id]
+    round_id_tuple = tuple(round_id_list)
+    feature_tuple = tuple(round_feature)
+    data_tuple = tuple(round_id_tuple) + tuple(feature_tuple)
+    return insert_command, data_tuple
+
+
+def make_data_tuple_back9(table, round_feature, round_id):
+    """
+    Function creates the SQL command needed to insert features into a table for the BACK9
+    :param table: name of table in database
+    :param round_feature: list of features
+    :param round_id: id of round in round table
+    :return: insert SQL command, features as tuple
+    """
+    insert_command = """INSERT INTO {}
+                  (round_id, hole10, hole11, hole12, hole13, hole14, hole15, hole16, hole17, hole18)
+                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);""".format(table)
+    round_id_list = [round_id]
+    round_id_tuple = tuple(round_id_list)
+    feature_tuple = tuple(round_feature)
+    data_tuple = tuple(round_id_tuple) + tuple(feature_tuple)
+    return insert_command, data_tuple
+
+
+def make_data_tuple_18holes(table, round_feature, round_id):
+    """
+    Function creates the SQL command needed to insert features into a table - 18 holes
+    :param table: name of table in database
+    :param round_feature: list of features
+    :param round_id: id of round in round table
+    :return: insert SQL command, features as tuple
+    """
+    insert_command = """INSERT INTO {}
+                      (round_id, hole1, hole2, hole3, hole4, hole5, hole6, hole7, hole8, hole9, hole10, hole11, hole12, hole13, hole14, hole15, hole16, hole17, hole18)
+                      VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);""".format(
+        table)
+    round_id_list = [round_id]
+    round_id_tuple = tuple(round_id_list)
+    feature_tuple = tuple(round_feature)
+    data_tuple = tuple(round_id_tuple) + tuple(feature_tuple)
+    return insert_command, data_tuple
+
+
+def insert_round_score_card_feature_to_table(table, round_id, holes_played, round_feature):
+    """
+    Function pipelines the process to insert 9/18 hole round feature information (shots, putts, fir, gir) into a database table
+    :param table: name of table in database
+    :param round_feature: list of features
+    :param holes_played: the amount of holes played
+    :param round_id: id of round in round table
+    :return:
+    """
+    if holes_played == FRONT9:
+        insert_command, data_tuple = make_data_tuple_front9(table, round_feature, round_id)
+        cursor_execute_tuple(insert_command, data_tuple)
+    elif holes_played == BACK9:
+        insert_command, data_tuple = make_data_tuple_back9(table, round_feature, round_id)
+        cursor_execute_tuple(insert_command, data_tuple)
+    elif holes_played == ALL18:
+        insert_command, data_tuple = make_data_tuple_18holes(table, round_feature, round_id)
+        cursor_execute_tuple(insert_command, data_tuple)
+    return None
+
+
+def make_round_df_and_insert_round_feature(file_path, holes_played, round_id):
+    """
+    Function will read a file path (CSV) and insert features to various round_feature tables
+    :param file_path: path of file (CSV)
+    :param holes_played: number of holes played in round
+    :param round_id: id of round
+    :return: None
+    """
+    temp_df = pd.read_csv(file_path)
+    round_shots_list = list(temp_df["Shots"])
+    round_putts_list = list(temp_df["Putts"])
+    round_fir_list = list(temp_df["FIR"])
+    round_gir_list = list(temp_df["GIR"])
+    insert_round_score_card_feature_to_table(ROUND_SHOTS_TABLE, round_id, holes_played, round_shots_list)
+    insert_round_score_card_feature_to_table(ROUND_PUTTS_TABLE, round_id, holes_played, round_putts_list)
+    insert_round_score_card_feature_to_table(ROUND_FIR_TABLE, round_id, holes_played, round_fir_list)
+    insert_round_score_card_feature_to_table(ROUND_GIR_TABLE, round_id, holes_played, round_gir_list)
     return None
 
 
 ################################ STREAMLIT #######################################
+
+
 con, cursor = connect_to_postgres_database(USER, PASSWORD, DATABASE, host="127.0.0.1",
                                                port="5432")
 
@@ -545,36 +585,39 @@ def app():
     """
     Function to render the add_golf_round.py page via the app.py file
     """
-    con, cursor = connect_to_postgres_database(USER, PASSWORD, DATABASE, host="127.0.0.1",
-                                               port="5432")
     st.subheader("Upload a round")
-    with st.expander("Click to learn how to add a round"):
-        st.write("1. Populate all fields in this below")
-        st.write("2. Click *'Add course and download score card template'*")
-        st.write("3. Fill in the downloaded score card with the course holes distance/par/stroke "
-                 "index")
-        st.write("4. Upload the filled out score card using the file uploader")
-        st.write("")
     try:
         # Session State User ID
-        # user_id = st.session_state["user_id"]
-        # user_id is not None
-        user_id = 999
+        user_id = st.session_state["user_id"]
+        user_id is not None
+        # user_id = 1
+        # Adding round instructions
+        with st.expander("Click to learn how to add a round"):
+            st.write("1. Populate all fields in this below")
+            st.write("2. Click *'Add course and download score card template'*")
+            st.write("3. Fill in the downloaded score card with the course holes distance/par/stroke "
+                     "index")
+            st.write("4. Upload the filled out score card using the file uploader")
+            st.write("")
+            st.write("*Can't find your course? Add via the App Navigation menu and then continue on "
+                     "adding your round!")
+        st.write("")
         # Select course name
         sorted_feature_list = make_alphabetical_course_name_list()
         course_name_select = st.selectbox(
             'Where did you play your round?',
             sorted_feature_list)
         course_id = get_id_from_course_name(course_name_select)
-        st.write("Can't find your course? Add it here and then continue on adding your round!")
         st.write("")
         # Select round date
         date_input = st.date_input(
             "When did you play your round?",
             value=datetime.today(), max_value=datetime.today())
         st.write("")
+        # Select tee time
         time_input = st.number_input('What hour did you start your round?', min_value=0, max_value=23)
         st.write("")
+        # Select holes played
         hole_input = st.selectbox('How many holes did you play?', (18, 9))
         if hole_input == 9:
             front_back_9 = st.selectbox('Did you play the Front or Back 9?', ("Front 9",
@@ -592,35 +635,43 @@ def app():
         # Generate score card template
         if course_name_select != "":
             round_score_card_template_df_csv = make_pipeline_round_score_card_csv(course_name_select, holes_played)
-        if st.download_button(
-                label="Add round and download round score card template",
-                data=round_score_card_template_df_csv,
-                file_name="golf_round_score_card_template.csv"):
-
-            # Get weather info
-            start_time = time(time_input, 0)
-            end_time = time(time_input + 4, 59)
-            start_datetime = datetime.combine(date_input, start_time)
-            end_datetime = datetime.combine(date_input, end_time)
-            city, country = get_city_country_from_course_id(course_id)
-            data = make_pipeline_city_historical_hourly_weather_df(city, country, start_datetime,
-                                                                   end_datetime)
-            weather_text, mean_air_temp, mean_rhumidity, sum_precipitation, mean_wind_speed, weather_condition = make_pipeline_weather_data_to_text(data)
-            # Insert round in database
-            try:
-                insert_round_in_round_table(course_id, user_id, date_input, time_input, mean_air_temp,
-                                            mean_rhumidity, sum_precipitation, mean_wind_speed,
-                                            weather_condition, hole_input)
-            except:
-                pass
-
-            # Show weather data
-            st.subheader("Weather conditions")
-            st.write(weather_text)
+        if course_name_select != "" and time_input > 0:
+            # Add round and download score card template button
+            if st.download_button(
+                    label="Add round and download round score card template",
+                    data=round_score_card_template_df_csv,
+                    file_name="golf_round_score_card_template.csv"):
+                # Get weather info
+                start_time = time(time_input, 0)
+                end_time = time(time_input + 4, 59)
+                start_datetime = datetime.combine(date_input, start_time)
+                end_datetime = datetime.combine(date_input, end_time)
+                city, country = get_city_country_from_course_id(course_id)
+                data = make_pipeline_city_historical_hourly_weather_df(city, country, start_datetime,
+                                                                       end_datetime)
+                weather_text, mean_air_temp, mean_rhumidity, sum_precipitation, mean_wind_speed, weather_condition = make_pipeline_weather_data_to_text(data)
+                # Insert round in database
+                try:
+                    date_created, time_created = insert_round_in_round_table(course_id, user_id,
+                                                                           date_input, time_input,
+                                                mean_air_temp,
+                                                mean_rhumidity, sum_precipitation, mean_wind_speed,
+                                                weather_condition, hole_input)
+                    round_id = get_round_id_from_round_features(course_id, user_id, date_input, time_input,
+                                                                date_created, time_created)
+                    # Initialize round id session state
+                    if "round_id" not in st.session_state:
+                        st.session_state['round_id'] = round_id
+                except:
+                    pass
+            # File uploader
+            uploaded_file = st.file_uploader("Upload round score card")
+            if uploaded_file is not None:
+                # Insert round to db
+                make_round_df_and_insert_round_feature(uploaded_file, holes_played,
+                                                       st.session_state['round_id'])
+                st.success("Successfully added your round")
     except KeyError:
-        st.warning("You must login before accessing this page. Please authenticate via the login menu.")
+            st.warning("You must login before accessing this page. Please authenticate via the login menu.")
+    return None
 
-
-
-
-#%%
