@@ -17,6 +17,8 @@ BETTER_FRONT9_TEXT = "You get off to a hot start!"
 BETTER_BACK9_TEXT = "You are able to finish your round well!"
 SAME_FRONT_BACK9_TEXT = "You are consistent throughout your round!"
 ROUND_AVERAGE_SCORE_TEXT = "For par 72 courses, your average 18 hole score is {}. From these rounds, your average front 9 score is {} and your back 9 score is {}. {}"
+BEST_ROUND_TEXT = "You played your best round at {} ({}, {}) on {}. You shot a {} ({}{})"
+RECENT_ROUND_TEXT = "The last round you played was on {} at {} ({}, {}). You shot a {} ({}{})"
 
 
 # Functions
@@ -339,6 +341,174 @@ def pipeline_make_average_round_score_text(user_id):
     return text
 
 
+def make_sql_par_72_best_round_score(user_id):
+    """
+    Function returns best par 72 round date played/score, course name/city/country/par and shots over/under
+    :param user_id: id of user
+    :return: date played score, course name, city, country, par and shots over/under
+    """
+    insert_command = """SELECT t.date_played, t.name, t.city, t.country, t.round_score, t.shots_over_under
+                        FROM (
+                            SELECT round.user_id, round.round_id, round.date_played, c.name, c.city, c.country, c.par, COALESCE(rs.hole1,0) + COALESCE(rs.hole2,0) + COALESCE(rs.hole3,0) +
+                                COALESCE(rs.hole4,0) +COALESCE(rs.hole5,0) + COALESCE(rs.hole6,0) + COALESCE(rs.hole7,0) + COALESCE(rs.hole8,0) +
+                                COALESCE(rs.hole9,0) + COALESCE(rs.hole10,0) + COALESCE(rs.hole11,0) + COALESCE(rs.hole12,0) + COALESCE(rs.hole13,0) +
+                                COALESCE(rs.hole14,0) + COALESCE(rs.hole15,0) + COALESCE(rs.hole16,0) + COALESCE(rs.hole17,0) + COALESCE(rs.hole18,0) AS round_score,
+                                ( COALESCE(rs.hole1,0) + COALESCE(rs.hole2,0) + COALESCE(rs.hole3,0) +
+                                COALESCE(rs.hole4,0) +COALESCE(rs.hole5,0) + COALESCE(rs.hole6,0) + COALESCE(rs.hole7,0) + COALESCE(rs.hole8,0) +
+                                COALESCE(rs.hole9,0) + COALESCE(rs.hole10,0) + COALESCE(rs.hole11,0) + COALESCE(rs.hole12,0) + COALESCE(rs.hole13,0) +
+                                COALESCE(rs.hole14,0) + COALESCE(rs.hole15,0) + COALESCE(rs.hole16,0) + COALESCE(rs.hole17,0) + COALESCE(rs.hole18,0) - c.par ) AS shots_over_under
+                            FROM round
+                            JOIN course c on round.course_id = c.course_id
+                            JOIN round_shots rs on round.round_id = rs.round_id) AS t
+                        WHERE shots_over_under = (
+                            SELECT MIN(shots_over_under)
+                            FROM (
+                                SELECT
+                                    ( COALESCE(rs.hole1,0) + COALESCE(rs.hole2,0) + COALESCE(rs.hole3,0) +
+                                    COALESCE(rs.hole4,0) +COALESCE(rs.hole5,0) + COALESCE(rs.hole6,0) + COALESCE(rs.hole7,0) + COALESCE(rs.hole8,0) +
+                                    COALESCE(rs.hole9,0) + COALESCE(rs.hole10,0) + COALESCE(rs.hole11,0) + COALESCE(rs.hole12,0) + COALESCE(rs.hole13,0) +
+                                    COALESCE(rs.hole14,0) + COALESCE(rs.hole15,0) + COALESCE(rs.hole16,0) + COALESCE(rs.hole17,0) + COALESCE(rs.hole18,0) - c.par ) AS shots_over_under
+                                FROM round
+                                JOIN course c on round.course_id = c.course_id
+                                JOIN round_shots rs on round.round_id = rs.round_id) AS t2
+                            )
+                        AND t.par = 72
+                        AND t.user_id = %s;"""
+    cursor.execute(insert_command, [user_id])
+    returned_value = cursor.fetchall()
+    best_round_tuple = returned_value[0]
+    return best_round_tuple
+
+
+def suffix(day):
+    """
+    Function adds the appropriate suffix to a day
+    :param day: the day (number) of the month
+    :return: the day (number) with the correct suffix
+    """
+    return 'th' if 11 <= day <= 13 else {1:'st', 2:'nd', 3:'rd'}.get(day%10, 'th')
+
+
+def custom_strftime(datetime_object):
+    """
+    Function returns a datetime object in the string format of month day(st/nd/rd/th), year
+    :param datetime_object: datetime object
+    :return: string format of month day(st/nd/rd/th), year
+    """
+    return datetime_object.strftime('%B {S}, %Y').replace('{S}', str(datetime_object.day) + suffix(datetime_object.day))
+
+
+def make_round_variables(best_round_tuple):
+    """
+    Function returns six variables by splitting the tuple provided to the function
+    :param best_round_tuple: tuple containing features of the round played
+    :return:
+    """
+    date_played = custom_strftime(best_round_tuple[0])
+    course_name = best_round_tuple[1]
+    course_city = best_round_tuple[2]
+    course_country = best_round_tuple[3]
+    round_score = best_round_tuple[4]
+    round_over_under_par = best_round_tuple[5]
+    return date_played, course_name, course_city, course_country, round_score, round_over_under_par
+
+
+def make_best_round_text(course_name, course_city, course_country, date_played, round_score, round_over_under_par):
+    """
+    Function returns the best round text
+    :param course_name: name of course
+    :param course_city: city of course
+    :param course_country: country of course
+    :param date_played: date played round
+    :param round_score: score of round
+    :param round_over_under_par: shots over/under par
+    :return: text containing information about the best round played
+    """
+    if round_over_under_par >= 0:
+        sign = "+"
+    elif round_over_under_par < 0:
+        sign = "-"
+    else:
+        pass
+    text = BEST_ROUND_TEXT.format(course_name, course_city, course_country, date_played, round_score, sign, round_over_under_par)
+    return text
+
+
+def pipeline_make_best_round_text(user_id):
+    """
+    Function pipelines the process require to return the best round text
+    :param user_id: id of user
+    :return: text containing information about the best round played
+    """
+    best_round_tuple = make_sql_par_72_best_round_score(user_id)
+    date_played, course_name, course_city, course_country, round_score, round_over_under_par = make_round_variables(
+        best_round_tuple)
+    text = make_best_round_text(course_name, course_city, course_country, date_played, round_score, round_over_under_par)
+    return text
+
+
+def make_sql_par_72_recent_round_score(user_id):
+    """
+    Function returns the most recent par 72 round date played/score, course name/city/country/par and shots over/under
+    :param user_id: id of user
+    :return: date played score, course name, city, country, par and shots over/under
+    """
+    insert_command = """SELECT round.date_played, c.name, c.city, c.country, COALESCE(rs.hole1,0) + COALESCE(rs.hole2,0) + COALESCE(rs.hole3,0) +
+                            COALESCE(rs.hole4,0) +COALESCE(rs.hole5,0) + COALESCE(rs.hole6,0) + COALESCE(rs.hole7,0) + COALESCE(rs.hole8,0) +
+                            COALESCE(rs.hole9,0) + COALESCE(rs.hole10,0) + COALESCE(rs.hole11,0) + COALESCE(rs.hole12,0) + COALESCE(rs.hole13,0) +
+                            COALESCE(rs.hole14,0) + COALESCE(rs.hole15,0) + COALESCE(rs.hole16,0) + COALESCE(rs.hole17,0) + COALESCE(rs.hole18,0) AS round_score,
+                            ( COALESCE(rs.hole1,0) + COALESCE(rs.hole2,0) + COALESCE(rs.hole3,0) +
+                            COALESCE(rs.hole4,0) +COALESCE(rs.hole5,0) + COALESCE(rs.hole6,0) + COALESCE(rs.hole7,0) + COALESCE(rs.hole8,0) +
+                            COALESCE(rs.hole9,0) + COALESCE(rs.hole10,0) + COALESCE(rs.hole11,0) + COALESCE(rs.hole12,0) + COALESCE(rs.hole13,0) +
+                            COALESCE(rs.hole14,0) + COALESCE(rs.hole15,0) + COALESCE(rs.hole16,0) + COALESCE(rs.hole17,0) + COALESCE(rs.hole18,0) - c.par ) AS shots_over_under
+                        FROM round
+                        JOIN course c on round.course_id = c.course_id
+                        JOIN round_shots rs on round.round_id = rs.round_id
+                        WHERE date_played = (
+                            SELECT MAX(date_played)
+                            FROM round
+                            )
+                        AND round.user_id = 21
+                        AND c.par = 72;"""
+    cursor.execute(insert_command, [user_id])
+    returned_value = cursor.fetchall()
+    recent_round_tuple = returned_value[0]
+    return recent_round_tuple
+
+
+def make_recent_round_text(course_name, course_city, course_country, date_played, round_score, round_over_under_par):
+    """
+    Function returns the most recent round text
+    :param course_name: name of course
+    :param course_city: city of course
+    :param course_country: country of course
+    :param date_played: date played round
+    :param round_score: score of round
+    :param round_over_under_par: shots over/under par
+    :return: text containing information about the the most recent round played
+    """
+    if round_over_under_par >= 0:
+        sign = "+"
+    elif round_over_under_par < 0:
+        sign = "-"
+    else:
+        pass
+    text = RECENT_ROUND_TEXT.format(date_played, course_name, course_city, course_country, round_score, sign, round_over_under_par)
+    return text
+
+
+def pipeline_make_recent_round_text(user_id):
+    """
+    Function pipelines the process require to return the most recent round text
+    :param user_id: id of user
+    :return: text containing information about the the most recent round played
+    """
+    best_round_tuple = make_sql_par_72_recent_round_score(user_id)
+    date_played, course_name, course_city, course_country, round_score, round_over_under_par = make_round_variables(best_round_tuple)
+    text = make_recent_round_text(course_name, course_city, course_country, date_played, round_score, round_over_under_par)
+    return text
+
+
 ########################################### STREAMLIT ################################################
 
 
@@ -362,6 +532,10 @@ def app():
         st.write(pipeline_make_total_rounds_courses_countries_text(user_id))
         # Average round score
         st.write(pipeline_make_average_round_score_text(user_id))
+        # Best round information
+        st.write(pipeline_make_best_round_text(user_id))
+        # Best recent information
+        st.write(pipeline_make_recent_round_text(user_id))
         # Rounds played around the world
         st.write("Rounds around the world")
         st.plotly_chart(pipeline_plot_rounds_played_world_map(user_id))
