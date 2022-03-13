@@ -4,7 +4,7 @@ import math
 from datetime import datetime
 from datetime import time
 from statistics import mean
-
+from sqlalchemy import create_engine
 import numpy as np
 import pandas as pd
 import psycopg2
@@ -575,17 +575,155 @@ def make_round_df_and_insert_round_feature(file_path, holes_played, round_id):
     return None
 
 
+def make_sql_count_of_rounds_played(user_id):
+    """
+    Function returns the number of rounds in the round_shots table created by a specified user id
+    :param user_id: id of user
+    :return: count of rounds played
+    """
+    insert_command = """SELECT COUNT(rs.round_id)
+                        FROM round
+                        JOIN round_shots rs on round.round_id = rs.round_id
+                        WHERE round.user_id = %s;"""
+    cursor.execute(insert_command, [user_id])
+    returned_value = cursor.fetchall()
+    rounds_played = returned_value[0][0]
+    return rounds_played
+
+
+def make_sql_rounds_played_calculation_hcp_index(rounds_played):
+    """
+    Function returns the appropriate values for rounds played, rounds to be used and adjustment from the calculation_handicap_index table
+    :param rounds_played: number of rounds played
+    :return: rounds played, rounds to be used and adjustment
+    """
+    insert_command = """SELECT *
+                        FROM calculation_handicap_index
+                        WHERE number_of_rounds = %s"""
+    cursor.execute(insert_command, [rounds_played])
+    returned_value = cursor.fetchall()
+    rounds_to_be_used = returned_value[0][1]
+    adjustment = returned_value[0][2]
+    return rounds_to_be_used, adjustment
+
+
+def make_logic_round_played_calculation_hcp_index_tuple(rounds_played):
+    """
+    Function creates the logic requried to return the correct round played tuple from the calculation_handicap_index tuple
+    :param rounds_played: number of rounds played
+    :return: rounds played, rounds to be used and adjustment
+    """
+    if rounds_played < 3:
+        return (np.nan, np.nan)
+    elif rounds_played > 20:
+        rounds_played = 20
+        return make_sql_rounds_played_calculation_hcp_index(rounds_played)
+    else:
+        return make_sql_rounds_played_calculation_hcp_index(rounds_played)
+
+
+def make_sql_rounds_score_differential_df(user_id):
+    """
+    Function returns a dataframe containing the round features and its score differential
+    :param user_id: id of user
+    :return: dataframe containing the round features and its score differential
+    """
+    insert_command = """SELECT round.round_id, round.date_played, c.slope, COALESCE(rs.hole1,0) + COALESCE(rs.hole2,0) + COALESCE(rs.hole3,0) +
+                            COALESCE(rs.hole4,0) +COALESCE(rs.hole5,0) + COALESCE(rs.hole6,0) + COALESCE(rs.hole7,0) + COALESCE(rs.hole8,0) +
+                            COALESCE(rs.hole9,0) + COALESCE(rs.hole10,0) + COALESCE(rs.hole11,0) + COALESCE(rs.hole12,0) + COALESCE(rs.hole13,0) +
+                            COALESCE(rs.hole14,0) + COALESCE(rs.hole15,0) + COALESCE(rs.hole16,0) + COALESCE(rs.hole17,0) + COALESCE(rs.hole18,0) AS round_score, c.rating,
+                               ( (113 / c.slope) * ((COALESCE(rs.hole1,0) + COALESCE(rs.hole2,0) + COALESCE(rs.hole3,0) +
+                            COALESCE(rs.hole4,0) +COALESCE(rs.hole5,0) + COALESCE(rs.hole6,0) + COALESCE(rs.hole7,0) + COALESCE(rs.hole8,0) +
+                            COALESCE(rs.hole9,0) + COALESCE(rs.hole10,0) + COALESCE(rs.hole11,0) + COALESCE(rs.hole12,0) + COALESCE(rs.hole13,0) +
+                            COALESCE(rs.hole14,0) + COALESCE(rs.hole15,0) + COALESCE(rs.hole16,0) + COALESCE(rs.hole17,0) + COALESCE(rs.hole18,0)) - c.rating) ) AS score_differntial
+                        FROM round
+                        JOIN course c on round.course_id = c.course_id
+                        JOIN round_shots rs on round.round_id = rs.round_id
+                        WHERE round.user_id = %(user_id)s
+                        ORDER BY round.date_played DESC;"""
+    score_differential_df = pd.read_sql_query(insert_command, con=engine, params={"user_id": user_id})
+    return score_differential_df
+
+
+def truncate(number, digits):
+    """
+    Function truncates a number to a specified digit
+    :param number: number to be truncated
+    :param digits: number of digits to truncate to
+    :return: truncated number
+    """
+    stepper = 10.0 ** digits
+    return math.trunc(stepper * number) / stepper
+
+
+def make_avg_score_diffential(score_differential_df, rounds_to_be_used):
+    """
+    Function returns the truncated average score differential from the specified number of rounds to be used
+    :param score_differential_df: dataframe containing the round features and its score differential
+    :param rounds_to_be_used:  rounds that should be used in the HCP calculation
+    :return: truncated average score differential
+    """
+    latest_20_score_differential_df = score_differential_df[:20]
+    best_score_differntial_df = latest_20_score_differential_df.sort_values("score_differntial")[:rounds_to_be_used]
+    avg_score_diffential = best_score_differntial_df["score_differntial"].mean()
+    truncated_avg_score_diffential = truncate(avg_score_diffential, 1)
+    return truncated_avg_score_diffential
+
+
+def make_handicap_index(truncated_avg_score_differential, adjustment):
+    """
+    Function returns the handicap index by subtracting adjustment from the truncated_avg_score_diffential
+    :param truncated_avg_score_differential: score differential
+    :param adjustment: number of strokes to be subtracted as per calculated_handicap_index table
+    :return: handicap index
+    """
+    handicap_index = truncated_avg_score_differential - adjustment
+    return handicap_index
+
+
+def pipeline_make_handicap_index(user_id):
+    """
+    Function pipelines the entire process required to calculate a users handicap index based on rounds played and the World Handicap System
+    :param user_id: id of user
+    :return:
+    """
+    rounds_played = make_sql_count_of_rounds_played(user_id)
+    rounds_to_be_used, adjustment = make_logic_round_played_calculation_hcp_index_tuple(rounds_played)
+    score_differential_df = make_sql_rounds_score_differential_df(user_id)
+    truncated_avg_score_differential = make_avg_score_diffential(score_differential_df, rounds_to_be_used)
+    handicap_index = make_handicap_index(truncated_avg_score_differential, adjustment)
+    return handicap_index
+
+
+def insert_hcp_into_dashboard_user_hcp_table(user_id, handicap_index):
+    """
+    Function inserts user_id, hcp index and date created in the hcp table
+    :param user_id: id of user
+    :param handicap_index: handicap index
+    :return: None
+    """
+    insert_command = """INSERT INTO dashboard_user_handicap
+                      (user_id, handicap_index, date_created, time_created)
+                      VALUES (%s, %s, %s, %s);"""
+    date_created, time_created = make_date_time()
+    data_tuple = (user_id, handicap_index, date_created, time_created)
+    cursor_execute_tuple(insert_command, data_tuple)
+    return None
+
+
 ################################ STREAMLIT #######################################
 
 
 con, cursor = connect_to_postgres_database(USER, PASSWORD, DATABASE, host="127.0.0.1",
                                                port="5432")
+engine = create_engine("postgresql+psycopg2://" + USER + ":" + PASSWORD + "@localhost/" + DATABASE)
+
 
 def app():
     """
     Function to render the add_golf_round.py page via the app.py file
     """
-    st.subheader("Upload a round")
+    st.subheader("Upload a round 🏌🏽‍♂️")
     try:
         # Session State User ID
         user_id = st.session_state["user_id"]
@@ -594,10 +732,13 @@ def app():
         # Adding round instructions
         with st.expander("Click to learn how to add a round"):
             st.write("1. Populate all fields in this below")
-            st.write("2. Click *'Add course and download score card template'*")
-            st.write("3. Fill in the downloaded score card with the course holes distance/par/stroke "
-                     "index")
-            st.write("4. Upload the filled out score card using the file uploader")
+            st.write("2. Click *'Add round and download round score card template'*")
+            st.write("3. Fill in the downloaded score card with your round shots. If available "
+                     "fill in Putts/FIR/GIR")
+            st.write("5. When filling in FIR/GIR, use a *1* to represent a yes (success) and a "
+                     "*0* to represent no (failure). When filling in FIR for par 3's (FIR not "
+                     "applicable) please put a *0* (zero)")
+            st.write("6. Upload the filled out score card using the file uploader")
             st.write("")
             st.write("*Can't find your course? Add via the App Navigation menu and then continue on "
                      "adding your round!")
@@ -647,16 +788,16 @@ def app():
                 start_datetime = datetime.combine(date_input, start_time)
                 end_datetime = datetime.combine(date_input, end_time)
                 city, country = get_city_country_from_course_id(course_id)
-                data = make_pipeline_city_historical_hourly_weather_df(city, country, start_datetime,
-                                                                       end_datetime)
+                data = make_pipeline_city_historical_hourly_weather_df(city, country,
+                                                                       start_datetime, end_datetime)
                 weather_text, mean_air_temp, mean_rhumidity, sum_precipitation, mean_wind_speed, weather_condition = make_pipeline_weather_data_to_text(data)
                 # Insert round in database
                 try:
                     date_created, time_created = insert_round_in_round_table(course_id, user_id,
-                                                                           date_input, time_input,
-                                                mean_air_temp,
-                                                mean_rhumidity, sum_precipitation, mean_wind_speed,
-                                                weather_condition, hole_input)
+                                                                             date_input,
+                                                                             time_input,
+                                                                             mean_air_temp,
+                                                                             mean_rhumidity, mean_wind_speed, sum_precipitation, weather_condition, hole_input)
                     round_id = get_round_id_from_round_features(course_id, user_id, date_input, time_input,
                                                                 date_created, time_created)
                     # Initialize round id session state
@@ -667,10 +808,20 @@ def app():
             # File uploader
             uploaded_file = st.file_uploader("Upload round score card")
             if uploaded_file is not None:
-                # Insert round to db
-                make_round_df_and_insert_round_feature(uploaded_file, holes_played,
-                                                       st.session_state['round_id'])
-                st.success("Successfully added your round")
+                try:
+                    # Insert round to db
+                    make_round_df_and_insert_round_feature(uploaded_file, holes_played,
+                                                           st.session_state['round_id'])
+                    st.success("Successfully added your round")
+                    # Calculate and insert HCP
+                    handicap_index = pipeline_make_handicap_index(user_id)
+                    if math.isnan(handicap_index):
+                        pass
+                    else:
+                        insert_hcp_into_dashboard_user_hcp_table(user_id, handicap_index)
+                except:
+                    st.error("We could not upload your file. Please make sure you are uploading "
+                             "the *round score card template* downloaded above!")
     except KeyError:
             st.warning("You must login before accessing this page. Please authenticate via the login menu.")
     return None

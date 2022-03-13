@@ -1,6 +1,7 @@
 import psycopg2
 from pylab import *
 import calplot
+from plotly_calplot import calplot
 import pandas as pd
 import streamlit as st
 import plotly.express as px
@@ -17,8 +18,12 @@ BETTER_FRONT9_TEXT = "You get off to a hot start!"
 BETTER_BACK9_TEXT = "You are able to finish your round well!"
 SAME_FRONT_BACK9_TEXT = "You are consistent throughout your round!"
 ROUND_AVERAGE_SCORE_TEXT = "For par 72 courses, your average 18 hole score is {}. From these rounds, your average front 9 score is {} and your back 9 score is {}. {}"
-BEST_ROUND_TEXT = "You played your best round at {} ({}, {}) on {}. You shot a {} ({}{})"
-RECENT_ROUND_TEXT = "The last round you played was on {} at {} ({}, {}). You shot a {} ({}{})"
+BEST_ROUND_TEXT = "You played your best round at {} ({}, {}) on {}. You shot a {} ({}{})."
+RECENT_ROUND_TEXT = "The last round you played was on {} at {} ({}, {}). You shot a {} ({}{})."
+HANDICAP_TEXT = "Your handicap index is **{}**. As defined by the World Handicap System, " \
+                "this has been calculated using the best {} scores from your {} most recent rounds."
+HANDICAP_TEXT_ERROR = "You need a minimum of three rounds to calculate your handicap index. You've played {}."
+
 
 
 # Functions
@@ -91,7 +96,9 @@ def plot_rounds_played_world_map(rounds_played_country_df):
     :return: scatter_geo object
     """
     fig = px.scatter_geo(rounds_played_country_df, locations="alpha3", color="continent",
-                         hover_name="country", size="count", projection="natural earth")
+                         hover_name="country", size="count", projection="natural earth",
+                         width=750, height=400)
+    fig.update_layout(legend={'title_text':''})
     return fig
 
 
@@ -121,11 +128,11 @@ def make_sql_rounds_date_played_df(user_id):
     return rounds_date_played_df
 
 
-def make_daily_rounds_date_played_series(rounds_date_played_df):
+def make_daily_rounds_date_played_df(rounds_date_played_df):
     """
-    Function creates a series with index date and a column showing count of rounds played per date
+    Function creates a dataframe with index date and a column showing count of rounds played per date
     :param rounds_date_played_df: dataframe with round id and the date that round was played
-    :return: series with index date and a column showing count of rounds played per date
+    :return: dataframe with index date and a column showing count of rounds played per date
     """
     rounds_date_played_df["date_played"] = pd.to_datetime(rounds_date_played_df["date_played"])
     dms = rounds_date_played_df.groupby(rounds_date_played_df['date_played'].dt.to_period('D')).count()['round_id'].to_timestamp()
@@ -134,29 +141,33 @@ def make_daily_rounds_date_played_series(rounds_date_played_df):
     idx = pd.date_range(str(min_year) + '-1-1', str(max_year) + '-12-31')
     dms.index = pd.DatetimeIndex(dms.index)
     daily_rounds_date_played = dms.reindex(idx, fill_value=0)
-    return daily_rounds_date_played
+    date_played_df = pd.DataFrame(daily_rounds_date_played).reset_index()
+    return date_played_df
 
 
-def plot_rounds_date_played_calendar(daily_rounds_date_played):
+def make_plotly_calendar_map(date_played_df):
     """
-    Function uses the calplot library to plot a calendar containing dates rounds were played
-    :param daily_rounds_date_played: series with index date and a column showing count of rounds played per date
-    :return: None
+    Function returns a calplot plotly object which allows for an interactive calendar
+    :param date_played_df: dataframe with index date and a column showing count of rounds played per date
+    :return: plotly calplot
     """
-    cmap = cm.get_cmap("Greens", 10)
-    fig, ax = calplot.calplot(daily_rounds_date_played, cmap = cmap)
+    fig = calplot(
+        date_played_df, x="index", y="round_id", years_title=True, colorscale="greens", gap=0,
+        name="Played", month_lines_width=1, month_lines_color="#79a883",
+        space_between_plots=0.25)
     return fig
 
 
 def pipeline_plot_rounds_date_played_calendar(user_id):
     """
-    Function pipelines the functions required to return a calplot object showing the dates a user has played rounds
+    Function pipelines the functions required to return a calplot object showing the dates a
+    user has played rounds
     :param user_id: id of user
     :return: None
     """
     rounds_date_played_df = make_sql_rounds_date_played_df(user_id)
-    daily_rounds_date_played = make_daily_rounds_date_played_series(rounds_date_played_df)
-    fig = plot_rounds_date_played_calendar(daily_rounds_date_played)
+    daily_rounds_date_played = make_daily_rounds_date_played_df(rounds_date_played_df)
+    fig = make_plotly_calendar_map(daily_rounds_date_played)
     return fig
 
 
@@ -341,9 +352,9 @@ def pipeline_make_average_round_score_text(user_id):
     return text
 
 
-def make_sql_par_72_best_round_score(user_id):
+def make_sql_best_round_score(user_id):
     """
-    Function returns best par 72 round date played/score, course name/city/country/par and shots over/under
+    Function returns best round date played/score, course name/city/country/par and shots over/under
     :param user_id: id of user
     :return: date played score, course name, city, country, par and shots over/under
     """
@@ -372,7 +383,6 @@ def make_sql_par_72_best_round_score(user_id):
                                 JOIN course c on round.course_id = c.course_id
                                 JOIN round_shots rs on round.round_id = rs.round_id) AS t2
                             )
-                        AND t.par = 72
                         AND t.user_id = %s;"""
     cursor.execute(insert_command, [user_id])
     returned_value = cursor.fetchall()
@@ -440,16 +450,16 @@ def pipeline_make_best_round_text(user_id):
     :param user_id: id of user
     :return: text containing information about the best round played
     """
-    best_round_tuple = make_sql_par_72_best_round_score(user_id)
+    best_round_tuple = make_sql_best_round_score(user_id)
     date_played, course_name, course_city, course_country, round_score, round_over_under_par = make_round_variables(
         best_round_tuple)
     text = make_best_round_text(course_name, course_city, course_country, date_played, round_score, round_over_under_par)
     return text
 
 
-def make_sql_par_72_recent_round_score(user_id):
+def make_sql_recent_round_score(user_id):
     """
-    Function returns the most recent par 72 round date played/score, course name/city/country/par and shots over/under
+    Function returns the most recent round date played/score, course name/city/country/par and shots over/under
     :param user_id: id of user
     :return: date played score, course name, city, country, par and shots over/under
     """
@@ -468,8 +478,7 @@ def make_sql_par_72_recent_round_score(user_id):
                             SELECT MAX(date_played)
                             FROM round
                             )
-                        AND round.user_id = 21
-                        AND c.par = 72;"""
+                        AND round.user_id = 21;"""
     cursor.execute(insert_command, [user_id])
     returned_value = cursor.fetchall()
     recent_round_tuple = returned_value[0]
@@ -503,18 +512,194 @@ def pipeline_make_recent_round_text(user_id):
     :param user_id: id of user
     :return: text containing information about the the most recent round played
     """
-    best_round_tuple = make_sql_par_72_recent_round_score(user_id)
+    best_round_tuple = make_sql_recent_round_score(user_id)
     date_played, course_name, course_city, course_country, round_score, round_over_under_par = make_round_variables(best_round_tuple)
     text = make_recent_round_text(course_name, course_city, course_country, date_played, round_score, round_over_under_par)
     return text
 
 
+def make_sql_user_handicap(user_id):
+    """
+    Function returns the most recent entry for a users handicap index by calling the dashboard user handicap table
+    :param user_id: id of user
+    :return: current handicap index
+    """
+    insert_command = """SELECT handicap_index
+                        FROM dashboard_user_handicap
+                        WHERE handicap_id = (
+                            SELECT MAX(handicap_id)
+                            FROM dashboard_user_handicap
+                            WHERE user_id = %s);"""
+    cursor.execute(insert_command, [user_id])
+    returned_value = cursor.fetchall()
+    handicap_index = returned_value[0][0]
+    return handicap_index
+
+
+def make_sql_count_of_rounds_played(user_id):
+    """
+    Function returns the number of rounds in the round_shots table created by a specified user id
+    :param user_id: id of user
+    :return: count of rounds played
+    """
+    insert_command = """SELECT COUNT(rs.round_id)
+                        FROM round
+                        JOIN round_shots rs on round.round_id = rs.round_id
+                        WHERE round.user_id = %s;"""
+    cursor.execute(insert_command, [user_id])
+    returned_value = cursor.fetchall()
+    rounds_played = returned_value[0][0]
+    return rounds_played
+
+
+def make_sql_rounds_played_calculation_hcp_index(rounds_played):
+    """
+    Function returns the appropriate values for rounds played, rounds to be used and adjustment from the calculation_handicap_index table
+    :param rounds_played: number of rounds played
+    :return: rounds played, rounds to be used and adjustment
+    """
+    insert_command = """SELECT *
+                        FROM calculation_handicap_index
+                        WHERE number_of_rounds = %s"""
+    cursor.execute(insert_command, [rounds_played])
+    returned_value = cursor.fetchall()
+    rounds_considered = returned_value[0][0]
+    rounds_to_be_used = returned_value[0][1]
+    adjustment = returned_value[0][2]
+    return rounds_considered, rounds_to_be_used, adjustment
+
+
+def make_logic_round_played_calculation_hcp_index_tuple(rounds_played):
+    """
+    Function creates the logic requried to return the correct round played tuple from the calculation_handicap_index tuple
+    :param rounds_played: number of rounds played
+    :return: rounds played, rounds to be used and adjustment
+    """
+    if rounds_played < 3:
+        return (np.nan, np.nan, np.nan)
+    elif rounds_played > 20:
+        rounds_played = 20
+        return make_sql_rounds_played_calculation_hcp_index(rounds_played)
+    else:
+        return make_sql_rounds_played_calculation_hcp_index(rounds_played)
+
+
+def make_handicap_text(user_id, handicap_index, rounds_to_be_used, rounds_considered):
+    """
+    Function returns the full handicap text for a user
+    :param handicap_index: user handicap
+    :param rounds_considered: rounds considered for handicap calculation
+    :param rounds_to_be_used: rounds used in handicap calulcation
+    :return: full handicap text for a user
+    """
+    rounds_played = make_sql_count_of_rounds_played(user_id)
+    if rounds_played < 3:
+        text = HANDICAP_TEXT_ERROR.format(rounds_played)
+    else:
+        text = HANDICAP_TEXT.format(handicap_index, rounds_to_be_used, rounds_considered)
+    return text
+
+
+def pipeline_make_handicap_text(user_id):
+    """
+    Function pipelines the process required to show a user the full handicap text for a user
+    :param user_id: id of user
+    :return: full handicap text for a user
+    """
+    handicap_index = make_sql_user_handicap(user_id)
+    rounds_played = make_sql_count_of_rounds_played(user_id)
+    rounds_considered, rounds_to_be_used, adjustment = make_logic_round_played_calculation_hcp_index_tuple(rounds_played)
+    text = make_handicap_text(user_id, handicap_index, rounds_to_be_used, rounds_considered)
+    return text
+
+
+
+def make_all_rounds_played_df(user_id):
+    """
+    Function returns a dataframe containing the all ky course, rounds and other information
+    :param user_id: id of user
+    :return: dataframe with course name, par, shot, score differential, weather, date
+    """
+    insert_command = """SELECT course.name, course.par,
+                            COALESCE(rs.hole1,0) + COALESCE(rs.hole2,0) + COALESCE(rs.hole3,0) +
+                            COALESCE(rs.hole4,0) +COALESCE(rs.hole5,0) + COALESCE(rs.hole6,0) + COALESCE(rs.hole7,0) + COALESCE(rs.hole8,0) +
+                            COALESCE(rs.hole9,0) + COALESCE(rs.hole10,0) + COALESCE(rs.hole11,0) + COALESCE(rs.hole12,0) + COALESCE(rs.hole13,0) +
+                            COALESCE(rs.hole14,0) + COALESCE(rs.hole15,0) + COALESCE(rs.hole16,0) + COALESCE(rs.hole17,0) + COALESCE(rs.hole18,0) AS shots,
+                            ( COALESCE(rs.hole1,0) + COALESCE(rs.hole2,0) + COALESCE(rs.hole3,0) +
+                            COALESCE(rs.hole4,0) +COALESCE(rs.hole5,0) + COALESCE(rs.hole6,0) + COALESCE(rs.hole7,0) + COALESCE(rs.hole8,0) +
+                            COALESCE(rs.hole9,0) + COALESCE(rs.hole10,0) + COALESCE(rs.hole11,0) + COALESCE(rs.hole12,0) + COALESCE(rs.hole13,0) +
+                            COALESCE(rs.hole14,0) + COALESCE(rs.hole15,0) + COALESCE(rs.hole16,0) + COALESCE(rs.hole17,0) + COALESCE(rs.hole18,0) - course.par) AS over_under,
+                            TRUNC(( (113 / course.slope) * ((COALESCE(rs.hole1,0) + COALESCE(rs.hole2,0) + COALESCE(rs.hole3,0) +
+                            COALESCE(rs.hole4,0) +COALESCE(rs.hole5,0) + COALESCE(rs.hole6,0) + COALESCE(rs.hole7,0) + COALESCE(rs.hole8,0) +
+                            COALESCE(rs.hole9,0) + COALESCE(rs.hole10,0) + COALESCE(rs.hole11,0) + COALESCE(rs.hole12,0) + COALESCE(rs.hole13,0) +
+                            COALESCE(rs.hole14,0) + COALESCE(rs.hole15,0) + COALESCE(rs.hole16,0) + COALESCE(rs.hole17,0) + COALESCE(rs.hole18,0)) - course.rating) )) AS score_differential,
+                            COALESCE(rp.hole1,null) + COALESCE(rp.hole2,null) + COALESCE(rp.hole3,null) +
+                            COALESCE(rp.hole4,null) +COALESCE(rp.hole5,null) + COALESCE(rp.hole6,null) + COALESCE(rp.hole7,null) + COALESCE(rp.hole8,null) +
+                            COALESCE(rp.hole9,null) + COALESCE(rp.hole10,null) + COALESCE(rp.hole11,null) + COALESCE(rp.hole12,null) + COALESCE(rp.hole13,null) +
+                            COALESCE(rp.hole14,null) + COALESCE(rp.hole15,null) + COALESCE(rp.hole16,null) + COALESCE(rp.hole17,null) + COALESCE(rp.hole18,null) AS putts,
+                            ( COALESCE(rg.hole1,null) + COALESCE(rg.hole2,null) + COALESCE(rg.hole3,null) +
+                            COALESCE(rg.hole4,null) +COALESCE(rg.hole5,null) + COALESCE(rg.hole6,null) + COALESCE(rg.hole7,null) + COALESCE(rg.hole8,null) +
+                            COALESCE(rg.hole9,null) + COALESCE(rg.hole10,null) + COALESCE(rg.hole11,null) + COALESCE(rg.hole12,null) + COALESCE(rg.hole13,null) +
+                            COALESCE(rg.hole14,null) + COALESCE(rg.hole15,null) + COALESCE(rg.hole16,null) + COALESCE(rg.hole17,null) + COALESCE(rg.hole18,null) ) AS gir,
+                            ( COALESCE(rf.hole1,null) + COALESCE(rf.hole2,null) + COALESCE(rf.hole3,null) +
+                            COALESCE(rf.hole4,null) +COALESCE(rf.hole5,null) + COALESCE(rf.hole6,null) + COALESCE(rf.hole7,null) + COALESCE(rf.hole8,null) +
+                            COALESCE(rf.hole9,null) + COALESCE(rf.hole10,null) + COALESCE(rf.hole11,null) + COALESCE(rf.hole12,null) + COALESCE(rf.hole13,null) +
+                            COALESCE(rf.hole14,null) + COALESCE(rf.hole15,null) + COALESCE(rf.hole16,null) + COALESCE(rf.hole17,null) + COALESCE(rf.hole18,null) ) AS fir,
+                            round.temperature, round.humidity, round.wind_speed, round.date_played
+                        FROM course
+                        INNER JOIN round ON course.course_id = round.course_id
+                        JOIN round_shots rs on round.round_id = rs.round_id
+                        LEFT JOIN round_putts rp on round.round_id = rp.round_id
+                        LEFT JOIN round_gir rg on round.round_id = rg.round_id
+                        LEFT JOIN round_fir rf on round.round_id = rf.round_id
+                        WHERE round.user_id=%(user_id)s"""
+    all_rounds_df = pd.read_sql_query(insert_command, con=engine, params={"user_id": user_id})
+    all_rounds_df[["score_differential", "putts", "gir", "fir"]] = all_rounds_df[["score_differential", "putts", "gir", "fir"]].astype("Int64")
+    return all_rounds_df
+
+
+def make_all_rounds_played_plotly(all_rounds_df):
+    """
+    Function uses all round data to output a time vs score chart
+    :param all_rounds_df: dataframe with course name, par, shot, score differential, weather, date
+    :return: plotly object
+    """
+    color_discrete_map = {"72": '#064e25', "71": "#0b9b49", "70": "#85cda4"}
+    fig = px.scatter(
+        data_frame=all_rounds_df,
+        x="date_played",
+        y="shots",
+        color=all_rounds_df["par"].astype(str),
+        custom_data=["name", 'par', 'over_under', "score_differential"], color_discrete_map=color_discrete_map,
+        template="simple_white",
+        labels=dict(date_played="", shots="Round Score"), size=list(all_rounds_df["score_differential"]))
+    fig.update_traces(
+        hovertemplate="<br>".join([
+            "<b>%{customdata[0]}</b><br>",
+            "Shots: %{y}",
+            "Over/Under: %{customdata[2]}",
+            "Differential: %{customdata[3]}",
+            "Date: %{x}"]))
+    fig.update_layout(legend_title_text='Course Par')
+    fig.update_layout({"plot_bgcolor": "rgba(0, 0, 0, 0)", "paper_bgcolor": "rgba(0, 0, 0, 0)"})
+    return fig
+
+
+def pipeline_make_all_rounds_played_plotly(user_id):
+    """
+    Function pipelines the process required to out put a visualisation of the scores over time
+    :param user_id: id of user
+    :return: plotly fig
+    """
+    all_rounds_df = make_all_rounds_played_df(user_id)
+    fig = make_all_rounds_played_plotly(all_rounds_df)
+    return fig
+
+
 ########################################### STREAMLIT ################################################
 
-
 # Connect to DB
-con, cursor = connect_to_postgres_database(USER, PASSWORD, DATABASE, host="127.0.0.1",
-                                           port="5432")
+con, cursor = connect_to_postgres_database(USER, PASSWORD, DATABASE, host="127.0.0.1", port="5432")
 engine = create_engine("postgresql+psycopg2://" + USER + ":" + PASSWORD + "@localhost/" + DATABASE)
 
 
@@ -523,11 +708,13 @@ def app():
 
     :return:
     """
-    st.subheader("Golfing Profile")
+    st.subheader("Golfing profile 🥇")
     try:
         user_id = st.session_state["user_id"]
         user_id is not None
-        # user_id = 1
+        # user_id = 21
+        # Handicap index
+        st.write(pipeline_make_handicap_text(user_id))
         # Rounds/Courses/Countries played text
         st.write(pipeline_make_total_rounds_courses_countries_text(user_id))
         # Average round score
@@ -536,12 +723,25 @@ def app():
         st.write(pipeline_make_best_round_text(user_id))
         # Best recent information
         st.write(pipeline_make_recent_round_text(user_id))
+        # All rounds
+        st.write("")
+        st.subheader("Golf round data")
+        st.write("This table shows all your rounds and relevant course and weather condition "
+                 "data. You can sort by clicking column header.")
+        st.dataframe(make_all_rounds_played_df(user_id))
         # Rounds played around the world
-        st.write("Rounds around the world")
+        st.write("")
+        st.subheader("Rounds around the world")
+        st.write("This map shows in what places you have played golf. Hover above color to view country.")
         st.plotly_chart(pipeline_plot_rounds_played_world_map(user_id))
         # Rounds played calendar
-        st.write("Rounds across time")
-        st.pyplot(pipeline_plot_rounds_date_played_calendar(user_id))
+        st.subheader("Rounds over time")
+        st.write("This calendar shows what days you have played golf over the years.")
+        st.plotly_chart(pipeline_plot_rounds_date_played_calendar(user_id))
+        # Scores over time
+        st.subheader("Scores over time")
+        st.write("This visualisation shows your round score across time. Hover on of the data to get more information into your round.")
+        st.plotly_chart(pipeline_make_all_rounds_played_plotly(user_id))
     except KeyError:
         st.warning("You must login before accessing this page. Please authenticate via the login menu.")
     return None

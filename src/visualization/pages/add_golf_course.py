@@ -230,12 +230,11 @@ def make_course_df_and_insert_course_feature(file_path, course_name):
 con, cursor = connect_to_postgres_database(USER, PASSWORD, DATABASE, host="127.0.0.1",
                                            port="5432")
 
-
 def app():
     """
     Function to render the add_golf_course.py page via the app.py file
     """
-    st.subheader("Add a course")
+    st.subheader("Add a course ⛳")
     try:
         user_id = st.session_state["user_id"]
         user_id is not None
@@ -243,7 +242,7 @@ def app():
         # Adding course instructions
         with st.expander("Click to learn how to add a course"):
             st.write("1. Populate all fields in this below")
-            st.write("2. Click *'Add course and download score card template'*")
+            st.write("2. Click *'Add course and download course score card template'*")
             st.write("3. Fill in the downloaded score card with the course holes distance/par/stroke "
                      "index")
             st.write("4. Upload the filled out score card using the file uploader")
@@ -280,11 +279,15 @@ def app():
             # File uploader
             uploaded_file = st.file_uploader("Upload course score card")
             if uploaded_file is not None:
-                # Insert course to db
-                make_course_df_and_insert_course_feature(uploaded_file, course_name)
-                st.success("Successfully added course")
-                st.write("")
-                st.write("Thanks for adding a course to the database!")
+                try:
+                    # Insert course to db
+                    make_course_df_and_insert_course_feature(uploaded_file, course_name)
+                    st.success("Successfully added course")
+                    st.write("")
+                    st.write("Thanks for adding a course to the database!")
+                except:
+                    st.error("We could not upload your file. Please make sure you are uploading "
+                             "the *course score card template* downloaded above!")
     except KeyError:
         st.warning("You must login before accessing this page. Please authenticate via the login menu.")
     return None
