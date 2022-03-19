@@ -6,12 +6,14 @@ from datetime import datetime
 
 
 # Variables
-USER = "postgres"
-PASSWORD = "Barca2011"
-DATABASE = "golf_dashboard_db"
+USER = st.secrets["postgres"]["user"]
+PASSWORD = st.secrets["postgres"]["password"]
+DATABASE = st.secrets["postgres"]["dbname"]
+HOST = st.secrets["postgres"]["host"]
 
 
 # Initialise connection and generate cursor
+@st.cache(allow_output_mutation=True)
 def connect_to_postgres_database(user, password, database, host="127.0.0.1", port="5432"):
     """
     Function connects to a database and returns the cursor object
@@ -227,8 +229,8 @@ def make_course_df_and_insert_course_feature(file_path, course_name):
 ################################ STREAMLIT #######################################
 
 
-con, cursor = connect_to_postgres_database(USER, PASSWORD, DATABASE, host="127.0.0.1",
-                                           port="5432")
+# Connect to DB
+con, cursor = connect_to_postgres_database(USER, PASSWORD, DATABASE, HOST, port="5432")
 
 def app():
     """

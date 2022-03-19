@@ -14,13 +14,12 @@ from meteostat import Hourly
 from meteostat import Stations
 from psycopg2 import Error
 
-# from streamlit_multipage import MultiPage
-
 
 # Variables
-USER = "postgres"
-PASSWORD = "Barca2011"
-DATABASE = "golf_dashboard_db"
+USER = st.secrets["postgres"]["user"]
+PASSWORD = st.secrets["postgres"]["password"]
+DATABASE = st.secrets["postgres"]["dbname"]
+HOST = st.secrets["postgres"]["host"]
 NOMINATIM_USER_AGENT = "James"
 WEATHER_CODE_LIST = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]
 WEATHER_CONDITION_LIST = ["Clear", "Fair", "Cloudy", "Overcast", "Fog", "Freezing Fog", "Light Rain", "Rain", "Heavy Rain", "Freezing Rain", "Heavy Freezing Rain", "Sleet", "Heavy Sleet", "Light Snowfall", "Snowfall", "Heavy Snowfall", "Rain Shower", "Heavy Rain Shower", "Sleet Shower", "Heavy Sleet Shower", "Snow Shower", "Heavy Snow Shower", "Lightning", "Hail", "Thunderstorm", "Heavy Thunderstorm", "Storm"]
@@ -43,6 +42,7 @@ ROUND_GIR_TABLE = "round_gir"
 
 
 # Initialise connection and generate cursor
+@st.cache(allow_output_mutation=True)
 def connect_to_postgres_database(user, password, database, host="127.0.0.1", port="5432"):
     """
     Function connects to a database and returns the cursor object
@@ -714,9 +714,9 @@ def insert_hcp_into_dashboard_user_hcp_table(user_id, handicap_index):
 ################################ STREAMLIT #######################################
 
 
-con, cursor = connect_to_postgres_database(USER, PASSWORD, DATABASE, host="127.0.0.1",
-                                               port="5432")
-engine = create_engine("postgresql+psycopg2://" + USER + ":" + PASSWORD + "@localhost/" + DATABASE)
+# Connect to DB
+con, cursor = connect_to_postgres_database(USER, PASSWORD, DATABASE, HOST, port="5432")
+engine = create_engine("postgresql+psycopg2://" + USER + ":" + PASSWORD + "@" + HOST + "/" + DATABASE)
 
 
 def app():

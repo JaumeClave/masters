@@ -10,9 +10,10 @@ from sqlalchemy import create_engine
 
 
 # Variables
-USER = "postgres"
-PASSWORD = "Barca2011"
-DATABASE = "golf_dashboard_db"
+USER = st.secrets["postgres"]["user"]
+PASSWORD = st.secrets["postgres"]["password"]
+DATABASE = st.secrets["postgres"]["dbname"]
+HOST = st.secrets["postgres"]["host"]
 ROUND_COURSE_COUNTRY_PLAYED_TEXT = "You've played {} rounds across {} golf courses in {} different countries."
 BETTER_FRONT9_TEXT = "You get off to a hot start!"
 BETTER_BACK9_TEXT = "You are able to finish your round well!"
@@ -27,6 +28,7 @@ HANDICAP_TEXT_ERROR = "You need a minimum of three rounds to calculate your hand
 
 
 # Functions
+@st.cache(allow_output_mutation=True)
 def connect_to_postgres_database(user, password, database, host="127.0.0.1", port="5432"):
     """
     Function connects to a database and returns the cursor object
@@ -698,9 +700,10 @@ def pipeline_make_all_rounds_played_plotly(user_id):
 
 ########################################### STREAMLIT ################################################
 
+
 # Connect to DB
-con, cursor = connect_to_postgres_database(USER, PASSWORD, DATABASE, host="127.0.0.1", port="5432")
-engine = create_engine("postgresql+psycopg2://" + USER + ":" + PASSWORD + "@localhost/" + DATABASE)
+con, cursor = connect_to_postgres_database(USER, PASSWORD, DATABASE, HOST, port="5432")
+engine = create_engine("postgresql+psycopg2://" + USER + ":" + PASSWORD + "@" + HOST + "/" + DATABASE)
 
 
 def app():

@@ -7,15 +7,17 @@ from psycopg2 import Error
 
 
 # Variables
-USER = "postgres"
-PASSWORD = "Barca2011"
-DATABASE = "golf_dashboard_db"
+USER = st.secrets["postgres"]["user"]
+PASSWORD = st.secrets["postgres"]["password"]
+DATABASE = st.secrets["postgres"]["dbname"]
+HOST = st.secrets["postgres"]["host"]
 NON_UNIQUE_USERNAME = "Username already exists. Please try again with a different one"
 NON_UNIQUE_EMAIL = "Email already exists. Please try again with a different one"
 USER_CREATION_SUCCESS_MESSAGE = "Successfully executed the command"
 
 
 # Functions
+@st.cache(allow_output_mutation=True)
 def connect_to_postgres_database(user, password, database, host="127.0.0.1", port="5432"):
     """
     Function connects to a database and returns the cursor object
@@ -177,8 +179,8 @@ def make_id_from_username(username):
 
 
 # Connect to DB
-con, cursor = connect_to_postgres_database(USER, PASSWORD, DATABASE, host="127.0.0.1",
-                                               port="5432")
+con, cursor = connect_to_postgres_database(USER, PASSWORD, DATABASE, HOST, port="5432")
+
 
 def app():
     """
