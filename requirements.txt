@@ -71,7 +71,7 @@ plotly-calplot==0.1.7
 prometheus-client==0.13.1
 prompt-toolkit==3.0.26
 protobuf==3.19.4
-psycopg2==2.9.3
+psycopg2-binary==2.9.3
 pure-eval==0.2.2
 pyarrow==7.0.0
 pycparser==2.21
@@ -83,9 +83,6 @@ pyparsing==3.0.7
 pyrsistent==0.18.1
 python-dateutil==2.8.2
 pytz==2021.3
-pytz-deprecation-shim==0.1.0.post0
-pywin32==303
-pywinpty==2.0.2
 pyzmq==22.3.0
 qtconsole==5.2.2
 QtPy==2.0.1

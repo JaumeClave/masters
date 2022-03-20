@@ -1,17 +1,18 @@
 import psycopg2
-import streamlit as st
 from psycopg2 import Error
-# BLAH BLAH
+import streamlit as st
 from multipage import MultiPage
 from pages import add_golf_round, add_golf_course, authentication, dashboard
 
 # Variables
-USER = "postgres"
-PASSWORD = "Barca2011"
-DATABASE = "golf_dashboard_db"
+USER = st.secrets["postgres"]["user"]
+PASSWORD = st.secrets["postgres"]["password"]
+DATABASE = st.secrets["postgres"]["dbname"]
+HOST = st.secrets["postgres"]["host"]
 
 
 # Functions
+@st.cache(allow_output_mutation=True)
 def connect_to_postgres_database(user, password, database, host="127.0.0.1", port="5432"):
     """
     Function connects to a database and returns the cursor object
@@ -34,7 +35,9 @@ def connect_to_postgres_database(user, password, database, host="127.0.0.1", por
     return con, cursor
 
 ############################################ STREAMLIT ############################################
-con, cursor = connect_to_postgres_database(USER, PASSWORD, DATABASE, host="127.0.0.1",
+
+
+con, cursor = connect_to_postgres_database(USER, PASSWORD, DATABASE, HOST,
                                            port="5432")
 
 # Create an instance of the app
